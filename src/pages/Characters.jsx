@@ -1,4 +1,20 @@
 import { useState, useEffect } from 'react'
+import { initializeApp } from 'firebase/app'
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore'
+
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBDMrGnEu-zWdSt-e4QpwcOcMhjCapHXRo",
+  authDomain: "binki-database.firebaseapp.com",
+  projectId: "binki-database",
+  storageBucket: "binki-database.firebasestorage.app",
+  messagingSenderId: "1096173097762",
+  appId: "1:1096173097762:web:369ca36c72350b028e8b7b"
+
+};
+
+const app = initializeApp(firebaseConfig)
+const db = getFirestore(app)
 
 const SLOTS = [
   'Weapon', 'Secondary', 'Emblem',
@@ -18,16 +34,8 @@ const COOLDOWN = [1, 2, 3, 4]
 
 function emptySlot() {
   return {
-    itemLevel: '',
-    stars: 0,
-    potentialTier: 'None',
-    stat: '',
-    att: '',
-    boss: '',
-    ied: '',
-    critDmg: '',
-    cooldown: '',
-    mark: 0
+    itemLevel: '', stars: 0, potentialTier: 'None',
+    stat: '', att: '', boss: '', ied: '', critDmg: '', cooldown: '', mark: 0
   }
 }
 
@@ -35,21 +43,9 @@ function emptyCharacter(name) {
   const slots = {}
   SLOTS.forEach(slot => { slots[slot] = emptySlot() })
   return {
-    name,
-    slots,
-    level: '',
-    combatPower: '',
-    hexaConverted: '',
-    ied: '',
-    dropPct: '',
-    mesoPct: '',
-    arcaneForce: '',
-    sacredForce: '',
-    ozRings: {
-      cont: '',
-      ror:'',
-      wj:'',
-    },
+    name, slots, level: '', combatPower: '', hexaConverted: '', ied: '',
+    dropPct: '', mesoPct: '', arcaneForce: '', sacredForce: '',
+    ozRings: { cont: '', ror: '', wj: '' },
     spares: []
   }
 }
@@ -66,34 +62,17 @@ function PotentialInputs({ slot, data, onChange }) {
   )
 
   if (slot === 'Weapon' || slot === 'Secondary') return (
-    <div>
-      {sel('att', ATT_PCT, 'ATT')}
-      {sel('boss', BOSS_PCT, 'Boss')}
-      {sel('ied', IED_PCT, 'IED')}
-    </div>
+    <div>{sel('att', ATT_PCT, 'ATT')}{sel('boss', BOSS_PCT, 'Boss')}{sel('ied', IED_PCT, 'IED')}</div>
   )
-
   if (slot === 'Emblem') return (
-    <div>
-      {sel('att', ATT_PCT, 'ATT')}
-      {sel('ied', IED_PCT, 'IED')}
-    </div>
+    <div>{sel('att', ATT_PCT, 'ATT')}{sel('ied', IED_PCT, 'IED')}</div>
   )
-
   if (slot === 'Gloves') return (
-    <div>
-      {sel('stat', STAT_PCT, 'All Stat')}
-      {sel('critDmg', CRIT_DMG, 'Crit DMG')}
-    </div>
+    <div>{sel('stat', STAT_PCT, 'All Stat')}{sel('critDmg', CRIT_DMG, 'Crit DMG')}</div>
   )
-
   if (slot === 'Hat') return (
-    <div>
-      {sel('stat', STAT_PCT, 'All Stat')}
-      {sel('cooldown', COOLDOWN, 'Cooldown', 's')}
-    </div>
+    <div>{sel('stat', STAT_PCT, 'All Stat')}{sel('cooldown', COOLDOWN, 'Cooldown', 's')}</div>
   )
-
   return sel('stat', STAT_PCT, 'All Stat')
 }
 
@@ -104,10 +83,47 @@ function Characters() {
   })
   const [selected, setSelected] = useState(null)
   const [newName, setNewName] = useState('')
+  const [username, setUsername] = useState(() => localStorage.getItem('ms_username') || '')
+  const [cloudStatus, setCloudStatus] = useState('')
 
   useEffect(() => {
     localStorage.setItem('characters', JSON.stringify(characters))
   }, [characters])
+
+  async function saveToCloud() {
+    const name = username.trim().toLowerCase()
+    if (!name) { setCloudStatus('⚠️ Enter a username first'); return }
+    setCloudStatus('Saving…')
+    try {
+      await setDoc(doc(db, 'users', name), { characters })
+      localStorage.setItem('ms_username', name)
+      setCloudStatus('✅ Saved!')
+    } catch (e) {
+      setCloudStatus('❌ Save failed: ' + e.message)
+    }
+    setTimeout(() => setCloudStatus(''), 3000)
+  }
+
+  async function loadFromCloud() {
+    const name = username.trim().toLowerCase()
+    if (!name) { setCloudStatus('⚠️ Enter a username first'); return }
+    setCloudStatus('Loading…')
+    try {
+      const snap = await getDoc(doc(db, 'users', name))
+      if (snap.exists()) {
+        const data = snap.data()
+        setCharacters(data.characters)
+        setSelected(null)
+        localStorage.setItem('ms_username', name)
+        setCloudStatus('✅ Loaded!')
+      } else {
+        setCloudStatus('⚠️ No data found for that username')
+      }
+    } catch (e) {
+      setCloudStatus('❌ Load failed: ' + e.message)
+    }
+    setTimeout(() => setCloudStatus(''), 3000)
+  }
 
   function addCharacter() {
     if (!newName.trim() || characters.length >= 10) return
@@ -143,6 +159,20 @@ function Characters() {
     <div style={{ padding: '1rem', textAlign: 'left' }}>
       <h2>Characters</h2>
 
+      {/* Cloud sync bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '8px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '13px', color: '#555' }}>☁️ Cloud sync:</span>
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          style={{ width: '140px' }}
+        />
+        <button onClick={saveToCloud}>Save</button>
+        <button onClick={loadFromCloud}>Load</button>
+        {cloudStatus && <span style={{ fontSize: '13px', color: '#444' }}>{cloudStatus}</span>}
+      </div>
+
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
         <input
           placeholder="Character name"
@@ -150,18 +180,13 @@ function Characters() {
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addCharacter()}
         />
-        <button onClick={addCharacter} disabled={characters.length >= 10}>
-          Add
-        </button>
+        <button onClick={addCharacter} disabled={characters.length >= 10}>Add</button>
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         {characters.map((c, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <button
-              onClick={() => setSelected(i)}
-              style={{ fontWeight: selected === i ? 'bold' : 'normal' }}
-            >
+            <button onClick={() => setSelected(i)} style={{ fontWeight: selected === i ? 'bold' : 'normal' }}>
               {c.name}
             </button>
             <button onClick={() => removeCharacter(i)}>✕</button>
@@ -187,7 +212,7 @@ function Characters() {
                 <input
                   type="number"
                   placeholder={placeholder}
-                  value={char[field]}
+                  value={char[field] || ''}
                   onChange={e => updateCharacterField(field, e.target.value)}
                   style={{ width: '100%', boxSizing: 'border-box' }}
                 />
@@ -209,24 +234,26 @@ function Characters() {
               )}
             </div>
           </div>
-<div style={{ gridColumn: 'span 2' }}>
-  <div style={{ fontSize: '12px', color: '#888', marginBottom: '0.4rem' }}>OZ Rings</div>
-  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-    {[{ label: 'Cont', field: 'cont' }, { label: 'RoR', field: 'ror' }, { label: 'WJ', field: 'wj' }].map(({ label, field }) => (
-      <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-        <label style={{ fontSize: '13px' }}>{label}</label>
-        <select
-          value={char.ozRings?.[field] || ''}
-          onChange={e => updateCharacterField('ozRings', { ...char.ozRings, [field]: e.target.value })}
-        >
-          <option value="">—</option>
-          {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </div>
-    ))}
-  </div>
-</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '0.4rem' }}>OZ Rings</div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              {[{ label: 'Cont', field: 'cont' }, { label: 'RoR', field: 'ror' }, { label: 'WJ', field: 'wj' }].map(({ label, field }) => (
+                <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '13px' }}>{label}</label>
+                  <select
+                    value={char.ozRings?.[field] || ''}
+                    onChange={e => updateCharacterField('ozRings', { ...char.ozRings, [field]: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem' }}>
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', padding: '0.4rem' }}>Slot</th>
